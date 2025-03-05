@@ -31,7 +31,7 @@
         if (frame.size.width >= 127) {
             self.hidden = NO;
             if (frame.origin.y <= -48.3) {
-                frame.origin.y = 0;
+                frame.origin.y = 0; // needed to prevent island flickering in and out when hidden
                 [UIView performWithoutAnimation:^{
                     %orig(frame);
                 }];
@@ -40,7 +40,7 @@
         } else {
             self.hidden = YES;
             if (frame.origin.y <= 0) {
-                frame.origin.y = -999;
+                frame.origin.y = -999; // needed to prevent island flickering in and out when hidden
                 [UIView performWithoutAnimation:^{
                     %orig(frame);
                 }];
