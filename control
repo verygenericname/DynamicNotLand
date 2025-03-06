@@ -1,6 +1,6 @@
 Package: com.nathan.dynamicnotland
 Name: DynamicNotLand
-Version: 1.0.1
+Version: 1.0.2
 Architecture: iphoneos-arm
 Description: A tweak to hide the Dynamic Island on the 14 Pro series when it's not in use!
 Maintainer: Nathan
