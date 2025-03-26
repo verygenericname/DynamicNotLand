@@ -6,6 +6,76 @@
 @interface _SBSystemApertureGainMapView : UIView
 @end
 
+@interface _SBSystemApertureMagiciansCurtainView : UIView
+@end
+
+@interface SBFTouchPassThroughView : UIView
+@end
+
+@interface SBSystemApertureContainerView : UIView
+@end
+
+@interface CALayer()
+@property(atomic, assign) NSUInteger disableUpdateMask;
+@end
+
+static UIView *targetGainMapView = nil;
+
+%group regularHooks
+
+%hook SpringBoard
+
+- (void)applicationDidFinishLaunching:(UIApplication *)application {
+    %orig;
+
+    UIWindow *rootWindow = nil;
+    for (UIWindow *window in [UIApplication sharedApplication].windows) {
+        if ([window isKindOfClass:%c(SBRootSceneWindow)]) {
+            rootWindow = window;
+            break;
+        }
+    }
+
+    if (!rootWindow) return;
+
+    _SBGainMapView *gainMapView = [[_SBGainMapView alloc] initWithFrame:CGRectMake(-1.3, -0.9, 1, 1)];
+
+    gainMapView.backgroundColor = nil;
+    gainMapView.userInteractionEnabled = NO;
+    gainMapView.layer.disableUpdateMask |= 18;
+
+    [rootWindow addSubview:gainMapView];
+    targetGainMapView.layer.disableUpdateMask |= 31;
+}
+
+%end
+
+BOOL islandInUse;
+%hook SBSystemApertureController
+- (void)systemApertureViewController:(id)vc containsAnyContent:(BOOL)contains {
+    %orig;
+    islandInUse = contains;
+    if (contains == NO) {
+        targetGainMapView.layer.disableUpdateMask |= 31;
+    } else {
+        targetGainMapView.layer.disableUpdateMask &= ~31;
+    }
+}
+%end
+
+%hook SBSystemApertureViewController
+
++ (id)_sharedFeedbackGenerator {
+    if (islandInUse == NO) {
+        return nil;
+    } else {
+        return %orig;
+    }
+}
+
+%end
+
+
 %hook _SBGainMapView
 
 - (void)layoutSubviews {
@@ -15,43 +85,53 @@
     if (changed == 3) return;
     changed += 1;
 
-    // self.layer.disableUpdateMask |= 31;
-    CGRect frame = self.frame;
-    frame.origin.y = -48.3;
-    self.frame = frame;
-    // self.layer.opacity = 0.1;
-
-    if (/*changed == 2 ||*/ changed == 3) {
+    if ([self.superview isMemberOfClass:%c(_SBSystemApertureMagiciansCurtainView)]) {
         [self removeFromSuperview];
     }
-}
-
-- (void)setFrame:(CGRect)frame {
     if ([self.superview isMemberOfClass:%c(_SBSystemApertureGainMapView)]) {
-        if (frame.size.width >= 127) {
-            self.hidden = NO;
-            if (frame.origin.y <= -48.3) {
-                frame.origin.y = 0; // needed to prevent island flickering in and out when hidden
-                [UIView performWithoutAnimation:^{
-                    %orig(frame);
-                }];
-                return;
-            }
-        } else {
-            self.hidden = YES;
-            if (frame.origin.y <= 0) {
-                frame.origin.y = -100; // needed to prevent island flickering in and out when hidden
-                [UIView performWithoutAnimation:^{
-                    %orig(frame);
-                }];
-                return;
+        targetGainMapView = self;
+    }
+}
+%end
+
+%end
+
+%group shadow
+
+%hook SBFTouchPassThroughView
+
+- (void)layoutSubviews {
+    %orig;
+    static BOOL once = NO; 
+    if (once == NO) {
+        if (self.subviews.count == 4) {
+            UIView *targetSubview = self.subviews[0];
+            if ([targetSubview isKindOfClass:%c(MTMaterialView)]) {
+                once = YES;
+                [targetSubview removeFromSuperview];
             }
         }
-        %orig(frame);
-    } else {
-        %orig(frame);
     }
 }
 
 %end
 
+%hook SBSystemApertureContainerView
+
+- (void)setShadowStyle:(NSInteger)arg1 {
+    //
+}
+
+%end
+
+%end
+
+%ctor {
+    NSUserDefaults *prefs = [[NSUserDefaults alloc] initWithSuiteName:@"com.nathan.dynamicnotland"];
+    if ([prefs objectForKey:@"enabled"] ? [prefs boolForKey:@"enabled"] : YES) {
+        %init(regularHooks);
+    }
+    if ([prefs objectForKey:@"shadowDisabled"] ? [prefs boolForKey:@"shadowDisabled"] : NO) {
+        %init(shadow);
+    }
+}
