@@ -15,13 +15,24 @@
 @interface SBSystemApertureContainerView : UIView
 @end
 
-@interface CALayer()
+@interface CALayer(Undocumented)
 @property(atomic, assign) NSUInteger disableUpdateMask;
 @end
 
-static UIView *targetGainMapView = nil;
 
-%group regularHooks
+@interface FakeGainMapLayer : CALayer
+@property (nonatomic, assign) NSString *renderMode;
+@end
+
+@implementation FakeGainMapLayer
+@end
+
+static UIView *targetGainMapView = nil;
+static UIView *targetFrontGainMapView = nil;
+static BOOL islandInUse = YES;
+static BOOL backboarddMap = NO;
+
+%group RegularHooks
 
 %hook SpringBoard
 
@@ -38,6 +49,7 @@ static UIView *targetGainMapView = nil;
 
     if (!rootWindow) return;
 
+    backboarddMap = YES;
     _SBGainMapView *gainMapView = [[_SBGainMapView alloc] initWithFrame:CGRectMake(-1.3, -0.9, 1, 1)];
 
     gainMapView.backgroundColor = nil;
@@ -45,22 +57,27 @@ static UIView *targetGainMapView = nil;
     gainMapView.layer.disableUpdateMask |= 18;
 
     [rootWindow addSubview:gainMapView];
-    targetGainMapView.layer.disableUpdateMask |= 31;
+    targetGainMapView.layer.opacity = 0.0;
 }
 
 %end
 
-BOOL islandInUse;
 %hook SBSystemApertureController
+
 - (void)systemApertureViewController:(id)vc containsAnyContent:(BOOL)contains {
     %orig;
     islandInUse = contains;
     if (contains == NO) {
-        targetGainMapView.layer.disableUpdateMask |= 31;
+        [UIView animateWithDuration:0.3 animations:^{
+            targetGainMapView.layer.opacity = 0.0;
+            targetFrontGainMapView.layer.opacity = 0.0;
+        }];
     } else {
-        targetGainMapView.layer.disableUpdateMask &= ~31;
+        targetGainMapView.layer.opacity = 1.0;
+        targetFrontGainMapView.layer.opacity = 1.0;
     }
 }
+
 %end
 
 %hook SBSystemApertureViewController
@@ -75,28 +92,84 @@ BOOL islandInUse;
 
 %end
 
-
 %hook _SBGainMapView
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = %orig(frame);
+    if (self) {
+        self.backgroundColor = [UIColor blackColor];
+    }
+    return self;
+}
 
 - (void)layoutSubviews {
     %orig;
-
-    static int changed = 0;
-    if (changed == 3) return;
-    changed += 1;
-
-    if ([self.superview isMemberOfClass:%c(_SBSystemApertureMagiciansCurtainView)]) {
-        [self removeFromSuperview];
-    }
-    if ([self.superview isMemberOfClass:%c(_SBSystemApertureGainMapView)]) {
-        targetGainMapView = self;
+    static BOOL once = NO;
+    if (once == NO) {
+        if ([self.superview isMemberOfClass:%c(_SBSystemApertureGainMapView)]) {
+            once = YES;
+            targetGainMapView = self;
+            CGAffineTransform transform = self.transform;
+            transform.d = 1.01;
+            self.transform = transform;
+        }
     }
 }
-%end
+
++ (Class)layerClass {
+    if (backboarddMap == YES) {
+        backboarddMap = NO;
+        return %orig;
+    }
+    return [FakeGainMapLayer class];
+}
 
 %end
 
-%group shadow
+%hook _SBSystemApertureMagiciansCurtainView
+
+- (void)layoutSubviews {
+    [self removeFromSuperview];
+}
+
+%end
+
+%hook SBSystemApertureContainerView
+
+- (void)setFrame:(CGRect)frame {
+    if (islandInUse == NO) {
+        return;
+    }
+	%orig(frame);
+}
+
+%end
+
+%end
+
+%group KeepShadow
+
+%hook SBFTouchPassThroughView
+
+- (void)layoutSubviews {
+    %orig;
+    static BOOL once = NO;
+    if (once == NO) {
+        if (self.subviews.count == 4) {
+            UIView *targetSubview2 = self.subviews[2];
+            if ([targetSubview2 isKindOfClass:%c(UIView)]) {
+                once = YES;
+               targetFrontGainMapView = targetSubview2;
+            }
+        }
+    }
+}
+
+%end
+
+%end
+
+%group NoShadow
 
 %hook SBFTouchPassThroughView
 
@@ -106,6 +179,10 @@ BOOL islandInUse;
     if (once == NO) {
         if (self.subviews.count == 4) {
             UIView *targetSubview = self.subviews[0];
+            UIView *targetSubview2 = self.subviews[2];
+            if ([targetSubview2 isKindOfClass:%c(UIView)]) {
+                targetFrontGainMapView = targetSubview2;
+            }
             if ([targetSubview isKindOfClass:%c(MTMaterialView)]) {
                 once = YES;
                 [targetSubview removeFromSuperview];
@@ -118,9 +195,7 @@ BOOL islandInUse;
 
 %hook SBSystemApertureContainerView
 
-- (void)setShadowStyle:(NSInteger)arg1 {
-    //
-}
+- (void)setShadowStyle:(NSInteger)arg1 {}
 
 %end
 
@@ -129,9 +204,11 @@ BOOL islandInUse;
 %ctor {
     NSUserDefaults *prefs = [[NSUserDefaults alloc] initWithSuiteName:@"com.nathan.dynamicnotland"];
     if ([prefs objectForKey:@"enabled"] ? [prefs boolForKey:@"enabled"] : YES) {
-        %init(regularHooks);
+        %init(RegularHooks);
     }
     if ([prefs objectForKey:@"shadowDisabled"] ? [prefs boolForKey:@"shadowDisabled"] : NO) {
-        %init(shadow);
+        %init(NoShadow);
+    } else {
+        %init(KeepShadow);
     }
 }
