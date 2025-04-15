@@ -40,7 +40,7 @@ static BOOL backboarddMap = NO;
     %orig;
 
     UIWindow *rootWindow = nil;
-    for (UIWindow *window in [UIApplication sharedApplication].windows) {
+    for (UIWindow *window in application.windows) {
         if ([window isKindOfClass:%c(SBRootSceneWindow)]) {
             rootWindow = window;
             break;
