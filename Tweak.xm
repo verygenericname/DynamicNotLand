@@ -90,6 +90,14 @@ static BOOL backboarddMap = NO;
     }
 }
 
+-(BOOL)_handleImpactFeedbackAction:(id)arg1 {
+    if (islandInUse == NO) {
+        return NO;
+    } else {
+        return %orig;
+    }
+}
+
 %end
 
 %hook _SBGainMapView
